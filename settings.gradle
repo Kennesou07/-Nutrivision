@@ -14,9 +14,5 @@ dependencyResolutionManagement {
 }
 rootProject.name = "NutriVision"
 include ':app'
-
-include ':openCVLibrary3416'
-include ':openCVLibrary3416'
-include ':openCVLibrary3416'
 include ':openCVLibrary3416'
 include ':openCv'

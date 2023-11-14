@@ -2,7 +2,7 @@ package com.capstone.nutrivision;
 
 import static android.widget.Toast.LENGTH_SHORT;
 
-import static com.capstone.nutrivision.API.LOGIN_SITE;
+import static com.capstone.nutrivision.API.*;
 
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -13,6 +13,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.text.Layout;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -51,9 +52,10 @@ public class Login extends Activity {
     GoogleSignInOptions gso;
     GoogleSignInClient gsc;
     ImageView googleBtn;
-    Button login;
+    Button login,sendEmail;
     TextView forgotPass, register,btnSignUp;
     TextInputEditText editTextUsername,editTextPassword;
+    EditText editTextEmail;
     ProgressDialog progressDialog;
     InputMethodManager imm;
     @Override
@@ -148,7 +150,7 @@ public class Login extends Activity {
         forgotPass.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                //TODO MUST GO TO FORGOT PASSWORD / RECOVERY PASSWORD LAYOUT
+                showForgotPasswordDialog();
             }
         });
         register = findViewById(R.id.registerTextView);
@@ -205,4 +207,67 @@ public class Login extends Activity {
         finish();
     }
 
+    private void showForgotPasswordDialog(){
+        LayoutInflater inflater = (LayoutInflater) getSystemService(Context.LAYOUT_INFLATER_SERVICE);
+        View dialogView = inflater.inflate(R.layout.forgotpassword,null);
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setView(dialogView);
+        final AlertDialog alertDialog = builder.create();
+        editTextEmail = dialogView.findViewById(R.id.edtTextEmail);
+        sendEmail = dialogView.findViewById(R.id.btnSendEmail);
+
+        sendEmail.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                String email = editTextEmail.getText().toString().trim();
+                if (email == null) {
+                    Toast.makeText(Login.this,"Email is null",LENGTH_SHORT).show();
+                    editTextEmail.requestFocus();
+                    imm.showSoftInput(editTextEmail,InputMethodManager.SHOW_IMPLICIT);
+                }
+                else{
+                    String resetToken = TokenGenerator.generateToken();
+                    StringRequest stringRequest = new StringRequest(Request.Method.POST, FORGOT_SITE,
+                            new Response.Listener<String>() {
+                                @Override
+                                public void onResponse(String response) {
+                                    try {
+                                        JSONObject jsonResponse = new JSONObject(response);
+                                        String status = jsonResponse.getString("Status");
+                                        String message = jsonResponse.getString("Message");
+                                        if ("Success".equals(status)) {
+                                            Toast.makeText(Login.this, message, Toast.LENGTH_SHORT).show();
+                                        } else {
+                                            Toast.makeText(Login.this, message, Toast.LENGTH_SHORT).show();
+                                        }
+                                    } catch (JSONException e) {
+                                        e.printStackTrace();
+                                        Toast.makeText(Login.this, "JSON parsing error", Toast.LENGTH_SHORT).show();
+                                    }
+                                }
+                            }, new Response.ErrorListener() {
+                        @Override
+                        public void onErrorResponse(VolleyError error) {
+                            progressDialog.dismiss();
+                        }
+                    }){
+                        @Override
+                        protected Map<String, String> getParams() throws AuthFailureError {
+                            Map<String,String> params = new HashMap<>();
+                            params.put("Email",email);
+                            params.put("Token",resetToken);
+                            return params;
+                        }
+                    };
+                    stringRequest.setRetryPolicy(new DefaultRetryPolicy(1000,
+                            DefaultRetryPolicy.DEFAULT_MAX_RETRIES,
+                            DefaultRetryPolicy.DEFAULT_BACKOFF_MULT));
+                    RequestQueue queue = Volley.newRequestQueue(Login.this);
+                    queue.add(stringRequest);
+                }
+                alertDialog.dismiss();
+            }
+        });
+        alertDialog.show();
+    }
 }

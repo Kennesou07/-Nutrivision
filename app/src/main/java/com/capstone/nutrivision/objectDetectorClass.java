@@ -1,13 +1,12 @@
 package com.capstone.nutrivision;
 
 
-import static android.media.CamcorderProfile.get;
-
-import android.app.Activity;
 import android.content.res.AssetFileDescriptor;
 import android.content.res.AssetManager;
 import android.graphics.Bitmap;
+import android.util.Log;
 
+import org.opencv.android.Utils;
 import org.opencv.core.Core;
 import org.opencv.core.Mat;
 import org.opencv.core.Point;
@@ -21,16 +20,14 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.lang.reflect.Array;
-import java.nio.Buffer;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
-
-import kotlin.reflect.KClasses;
 
 public class objectDetectorClass {
     private Interpreter interpreter;
@@ -45,10 +42,17 @@ public class objectDetectorClass {
     objectDetectorClass(AssetManager assetManager, String modelPath, String labelpath, int inputSize) throws IOException{
         INPUT_SIZE = inputSize;
         Interpreter.Options options = new Interpreter.Options();
-        gpuDelegate = new GpuDelegate();
-        options.addDelegate(gpuDelegate);
+//        gpuDelegate = new GpuDelegate();
+//        options.addDelegate(gpuDelegate);
+        try {
+            gpuDelegate = new GpuDelegate();
+//            options.addDelegate(gpuDelegate);
+            Log.d("GPUDelegate", "GPU delegate initialized successfully");
+        } catch (Exception e) {
+            Log.e("GPUDelegateError", "Error initializing GPU delegate", e);
+        }
         options.setNumThreads(4);
-        interpreter = new Interpreter(loadModelFile(assetManager,modelPath),options);
+        interpreter = new Interpreter( loadModelFile(assetManager,modelPath),options);
         labelList = loadLabelList(assetManager,labelpath);
     }
     private List<String> loadLabelList(AssetManager assetManager, String labelPath) throws IOException{
@@ -70,52 +74,131 @@ public class objectDetectorClass {
         return fileChannel.map(FileChannel.MapMode.READ_ONLY,startOffset,declaredLength);
     }
     public Mat recognizeImage(Mat mat_image){
-        Mat rotated_mat_image = new Mat();
-        Mat a = mat_image.t();
-        Core.flip(a,rotated_mat_image,1);
-        a.release();
-//        Core.flip(mat_image.t(),rotated_mat_image,1);
-        Bitmap bitmap = null;
-        bitmap = Bitmap.createBitmap(rotated_mat_image.cols(),rotated_mat_image.rows(),Bitmap.Config.ARGB_8888);
-        height = bitmap.getHeight();
-        width = bitmap.getWidth();
-        Bitmap scaledBitmap = Bitmap.createScaledBitmap(bitmap,INPUT_SIZE,INPUT_SIZE,false);
-        ByteBuffer byteBuffer = convertBitmapToByteBuffer(scaledBitmap);
-        Object[] input = new Object[1];
-        input[0] = byteBuffer;
-        Map<Integer,Object> output_map = new TreeMap<>();
-        float[][][] boxes = new float[1][10][4];
-        float[][] scores = new float[1][10];
-        float[][] classes = new float[1][10];
-        output_map.put(1,boxes);
-        output_map.put(0, classes);
-        output_map.put(3,scores);
-        interpreter.runForMultipleInputsOutputs(input,output_map);
-        Object value = output_map.get(1);
-        Object Object_class = output_map.get(0);
-        Object score = output_map.get(3);
-        for(int i=0; i<10; i++){
-            float class_value = (float) Array.get(Array.get(Object_class,0),i);
-            float score_value = (float) Array.get(Array.get(score,0),i);
-            if(score_value > 0.5){
-                Object box1 = Array.get(Array.get(value,0),i);
-                float top = (float) Array.get(box1,0)*height;
-                float left = (float) Array.get(box1,0)*width;
-                float bottom = (float) Array.get(box1,0)*height;
-                float right = (float) Array.get(box1,0)*width;
-                Imgproc.rectangle(rotated_mat_image, new Point(left,top), new Point(right,bottom), new Scalar(0,255,0,255),2);
-                Imgproc.putText(rotated_mat_image,labelList.get((int) class_value),new Point(left,top),3,1,new Scalar(0,255,0,255),2);
+        try{
+            Log.d("Recognition", "Start recognition");
+            Mat rotated_mat_image = new Mat();
+            Mat a = mat_image.t();
+            Core.flip(a,rotated_mat_image,1);
+            a.release();
+            // Core.flip(mat_image.t(),rotated_mat_image,1);
+            Bitmap bitmap = null;
+            bitmap = Bitmap.createBitmap(rotated_mat_image.cols(),rotated_mat_image.rows(),Bitmap.Config.ARGB_8888);
+            Utils.matToBitmap(rotated_mat_image, bitmap);
+            height = bitmap.getHeight();
+            width = bitmap.getWidth();
+            Bitmap scaledBitmap = Bitmap.createScaledBitmap(bitmap,INPUT_SIZE,INPUT_SIZE,false);
+            ByteBuffer byteBuffer = convertBitmapToByteBuffer(scaledBitmap);
+            Object[] input = new Object[1];
+            input[0] = byteBuffer;
+            Map<Integer,Object> output_map = new TreeMap<>();
+
+            // Print the number of output tensors
+            int outputTensorCount = interpreter.getOutputTensorCount();
+            Log.d("Tensor Shapes", "Number of output tensors: " + outputTensorCount);
+
+            // Print the indices of output tensors
+            for (int i = 0; i < outputTensorCount; i++) {
+                Log.d("Tensor Shapes", "Output Tensor at index " + i + ": " + interpreter.getOutputTensor(i).name());
             }
-        }
-        Mat b = rotated_mat_image.t();
-        Core.flip(b,mat_image,0);
-        b.release();
+            int boxesIndex = 0;
+            int scoresIndex = 1;
+
+            int[] boxesShape = interpreter.getOutputTensor(boxesIndex).shape();
+            int[] scoresShape = interpreter.getOutputTensor(scoresIndex).shape();
+
+            float[][][] boxes = new float[boxesShape[0]][boxesShape[1]][boxesShape[2]];
+            float[][][] scores = new float[scoresShape[0]][scoresShape[1]][scoresShape[2]];
+
+
+            output_map.put(boxesIndex, boxes);
+            output_map.put(scoresIndex, scores);
+
+            Object value = output_map.get(0); // Use index 0 for the boxes tensor
+            Object Object_class = output_map.get(1); // Use index 1 for the classes tensor
+            Log.d("Recognition", "Before processing outputs");
+
+            if (value != null) {
+                Log.d("Object Value", value.getClass().getName());
+                Log.d("Object Dimensions - Boxes", Arrays.toString(getDimensions(value)));
+            } else {
+                Log.e("Recognition", "Value object is null.");
+            }
+
+            if (Object_class != null) {
+                Log.d("Object Dimensions - Classes", Arrays.toString(getDimensions(Object_class)));
+            } else {
+                Log.e("Recognition", "Object_class is null.");
+            }
+
+            if (value instanceof float[][][]) {
+                float[][][] boxesArray = (float[][][]) value;
+
+                if (Object_class instanceof float[][][]) {
+                    float[][][] Object_classArray = (float[][][]) Object_class;
+
+                    if (scores instanceof float[][][]) {
+                        float[][][] scoresArray = (float[][][]) scores;
+
+                        for (int i = 0; i < getDimensions(Object_class)[2]; i++) {
+                            float class_value = Object_classArray[0][0][i];
+                            float confidence_score = scoresArray[0][0][i];
+
+                            if (confidence_score > 0.5) {
+                                float[] box1 = boxesArray[0][i];
+
+                                float top = box1[0] * height;
+                                float left = box1[1] * width;
+                                float bottom = box1[2] * height;
+                                float right = box1[3] * width;
+                                Imgproc.rectangle(rotated_mat_image, new Point(left, top), new Point(right, bottom), new Scalar(0, 255, 0, 255), 2);
+                                Imgproc.putText(rotated_mat_image, labelList.get((int) class_value), new Point(left, top), 3, 1, new Scalar(0, 255, 0, 255), 2);
+                            }
+                        }
+                    } else {
+                        Log.e("Recognition", "Invalid format for the scores tensor.");
+                    }
+                } else {
+                    Log.e("Recognition", "Invalid format for the object number tensor.");
+                }
+            } else {
+                Log.e("Recognition", "Invalid format for the boxes tensor.");
+            }
+
+            Log.d("Recognition", "After processing outputs");
+
+
+            Log.d("Object Value", value.getClass().getName());
+            Log.d("Object Dimensions", Arrays.toString(getDimensions(value)));
+            Mat b = rotated_mat_image.t();
+            Core.flip(b,mat_image,0);
+            b.release();
 //        Core.flip(rotated_mat_image.t(),mat_image,0);
+            Log.e("Recognition","End recognition");
+        }
+        catch(Exception e){
+            Log.e("Recognition","Exception During Recognition", e);
+        }
         return mat_image;
     }
+    private static int[] getDimensions(Object array) {
+        int dimensions = 0;
+        Class<?> type = array.getClass();
+        while (type.isArray()) {
+            dimensions++;
+            type = type.getComponentType();
+        }
+        int[] result = new int[dimensions];
+        for (int i = 0; i < dimensions; i++) {
+            result[i] = Array.getLength(array);
+            array = Array.get(array, 0);
+        }
+        return result;
+    }
+
     public Mat recognizePhoto(Mat mat_image){
         Bitmap bitmap = null;
         bitmap = Bitmap.createBitmap(mat_image.cols(),mat_image.rows(),Bitmap.Config.ARGB_8888);
+        Utils.matToBitmap(mat_image, bitmap);
         height = bitmap.getHeight();
         width = bitmap.getWidth();
         Bitmap scaledBitmap = Bitmap.createScaledBitmap(bitmap,INPUT_SIZE,INPUT_SIZE,false);
@@ -123,29 +206,80 @@ public class objectDetectorClass {
         Object[] input = new Object[1];
         input[0] = byteBuffer;
         Map<Integer,Object> output_map = new TreeMap<>();
-        float[][][] boxes = new float[1][10][4];
-        float[][] scores = new float[1][10];
-        float[][] classes = new float[1][10];
-        output_map.put(1,boxes);
-        output_map.put(0, classes);
-        output_map.put(3,scores);
-        interpreter.runForMultipleInputsOutputs(input,output_map);
-        Object value = output_map.get(1);
-        Object Object_class = output_map.get(0);
-        Object score = output_map.get(3);
-        for(int i=0; i<10; i++){
-            float class_value = (float) Array.get(Array.get(Object_class,0),i);
-            float score_value = (float) Array.get(Array.get(score,0),i);
-            if(score_value > 0.5){
-                Object box1 = Array.get(Array.get(value,0),i);
-                float top = (float) Array.get(box1,0)*height;
-                float left = (float) Array.get(box1,0)*width;
-                float bottom = (float) Array.get(box1,0)*height;
-                float right = (float) Array.get(box1,0)*width;
-                Imgproc.rectangle(mat_image, new Point(left,top), new Point(right,bottom), new Scalar(0,255,0,255),2);
-                Imgproc.putText(mat_image,labelList.get((int) class_value),new Point(left,top),3,1,new Scalar(0,255,0,255),2);
-            }
+        // Print the number of output tensors
+        int outputTensorCount = interpreter.getOutputTensorCount();
+        Log.d("Tensor Shapes", "Number of output tensors: " + outputTensorCount);
+
+        // Print the indices of output tensors
+        for (int i = 0; i < outputTensorCount; i++) {
+            Log.d("Tensor Shapes", "Output Tensor at index " + i + ": " + interpreter.getOutputTensor(i).name());
         }
+        int boxesIndex = 0;
+        int scoresIndex = 1;
+
+        int[] boxesShape = interpreter.getOutputTensor(boxesIndex).shape();
+        int[] scoresShape = interpreter.getOutputTensor(scoresIndex).shape();
+
+        float[][][] boxes = new float[boxesShape[0]][boxesShape[1]][boxesShape[2]];
+        float[][][] scores = new float[scoresShape[0]][scoresShape[1]][scoresShape[2]];
+
+
+        output_map.put(boxesIndex, boxes);
+        output_map.put(scoresIndex, scores);
+
+        Object value = output_map.get(0); // Use index 0 for the boxes tensor
+        Object Object_class = output_map.get(1); // Use index 1 for the classes tensor
+        Log.d("Recognition", "Before processing outputs");
+
+        if (value != null) {
+            Log.d("Object Value", value.getClass().getName());
+            Log.d("Object Dimensions - Boxes", Arrays.toString(getDimensions(value)));
+        } else {
+            Log.e("Recognition", "Value object is null.");
+        }
+
+        if (Object_class != null) {
+            Log.d("Object Dimensions - Classes", Arrays.toString(getDimensions(Object_class)));
+        } else {
+            Log.e("Recognition", "Object_class is null.");
+        }
+
+        if (value instanceof float[][][]) {
+            float[][][] boxesArray = (float[][][]) value;
+
+            if (Object_class instanceof float[][][]) {
+                float[][][] Object_classArray = (float[][][]) Object_class;
+
+                if (scores instanceof float[][][]) {
+                    float[][][] scoresArray = (float[][][]) scores;
+
+                    for (int i = 0; i < getDimensions(Object_class)[2]; i++) {
+                        float class_value = Object_classArray[0][0][i];
+                        float confidence_score = scoresArray[0][0][i];
+
+                        if (confidence_score > 0.5) {
+                            float[] box1 = boxesArray[0][i];
+
+                            float top = box1[0] * height;
+                            float left = box1[1] * width;
+                            float bottom = box1[2] * height;
+                            float right = box1[3] * width;
+                            Imgproc.rectangle(mat_image, new Point(left, top), new Point(right, bottom), new Scalar(0, 255, 0, 255), 2);
+                            Imgproc.putText(mat_image, labelList.get((int) class_value), new Point(left, top), 3, 1, new Scalar(0, 255, 0, 255), 2);
+                        }
+                    }
+                } else {
+                    Log.e("Recognition", "Invalid format for the scores tensor.");
+                }
+            } else {
+                Log.e("Recognition", "Invalid format for the object number tensor.");
+            }
+        } else {
+            Log.e("Recognition", "Invalid format for the boxes tensor.");
+        }
+
+        Log.d("Recognition", "After processing outputs");
+
         return mat_image;
     }
     private ByteBuffer convertBitmapToByteBuffer(Bitmap bitmap){

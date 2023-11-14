@@ -53,7 +53,7 @@ public class RealTimeCapture extends Activity implements CameraBridgeViewBase.Cv
         mOpenCvCameraView.setCvCameraViewListener(this);
         try{
             //input size for 640 for this model
-            objectDetectorClass = new objectDetectorClass(getAssets(),"custom_best_float32.tflite","label.txt",640);
+            objectDetectorClass = new objectDetectorClass(getAssets(),"yolov4-tiny-416-fp16.tflite","label.txt",416);
             Log.d("MainActivity","Model is successfully loaded");
         }
         catch(IOException e){
@@ -102,6 +102,8 @@ public class RealTimeCapture extends Activity implements CameraBridgeViewBase.Cv
     public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame){
         mRgba = inputFrame.rgba();
         mGray = inputFrame.gray();
-        return mRgba;
+        Mat detectedFrame = objectDetectorClass.recognizeImage(mRgba);
+
+        return detectedFrame;
     }
 }
