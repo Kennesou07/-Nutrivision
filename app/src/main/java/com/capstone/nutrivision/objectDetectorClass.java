@@ -144,9 +144,8 @@ public class objectDetectorClass {
                         for (int i = 0; i < getDimensions(Object_class)[2]; i++) {
                             float class_value = Object_classArray[0][0][i];
                             float confidence_score = scoresArray[0][0][i];
-                            Log.d("Detection Result", "Class: " + class_value + ", Confidence: " + confidence_score +
-                                    ", Box: " + Arrays.toString(boxesArray[0][i]));
-                            if (confidence_score > 0.1) {
+                            Log.d("Debug", "Index: " + i + ", Class: " + class_value + ", Confidence: " + confidence_score);
+                            if (confidence_score > 0.5) {
                                 float[] box1 = boxesArray[0][i];
 
                                 float top = box1[0] * height;
