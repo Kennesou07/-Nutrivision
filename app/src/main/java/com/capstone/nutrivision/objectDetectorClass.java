@@ -138,18 +138,22 @@ public class objectDetectorClass {
 
                     if (scores instanceof float[][][]) {
                         float[][][] scoresArray = (float[][][]) scores;
-
+                        Log.d("Recognition", "Boxes Array: " + Arrays.deepToString(boxesArray));
+                        Log.d("Recognition", "Object Class Array: " + Arrays.deepToString(Object_classArray));
+                        Log.d("Recognition", "Scores Array: " + Arrays.deepToString(scoresArray));
                         for (int i = 0; i < getDimensions(Object_class)[2]; i++) {
                             float class_value = Object_classArray[0][0][i];
                             float confidence_score = scoresArray[0][0][i];
-
-                            if (confidence_score > 0.5) {
+                            Log.d("Detection Result", "Class: " + class_value + ", Confidence: " + confidence_score +
+                                    ", Box: " + Arrays.toString(boxesArray[0][i]));
+                            if (confidence_score > 0.1) {
                                 float[] box1 = boxesArray[0][i];
 
                                 float top = box1[0] * height;
                                 float left = box1[1] * width;
                                 float bottom = box1[2] * height;
                                 float right = box1[3] * width;
+                                Log.d("Recognition", "Detected Object: " + labelList.get((int) class_value));
                                 Imgproc.rectangle(rotated_mat_image, new Point(left, top), new Point(right, bottom), new Scalar(0, 255, 0, 255), 2);
                                 Imgproc.putText(rotated_mat_image, labelList.get((int) class_value), new Point(left, top), 3, 1, new Scalar(0, 255, 0, 255), 2);
                             }
@@ -166,14 +170,11 @@ public class objectDetectorClass {
 
             Log.d("Recognition", "After processing outputs");
 
-
-            Log.d("Object Value", value.getClass().getName());
-            Log.d("Object Dimensions", Arrays.toString(getDimensions(value)));
             Mat b = rotated_mat_image.t();
             Core.flip(b,mat_image,0);
             b.release();
 //        Core.flip(rotated_mat_image.t(),mat_image,0);
-            Log.e("Recognition","End recognition");
+            Log.d("Recognition","End recognition");
         }
         catch(Exception e){
             Log.e("Recognition","Exception During Recognition", e);
