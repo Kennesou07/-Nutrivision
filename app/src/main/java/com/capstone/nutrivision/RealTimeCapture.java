@@ -2,7 +2,6 @@ package com.capstone.nutrivision;
 
 import android.app.Activity;
 import android.content.res.AssetManager;
-import android.graphics.Camera;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.SurfaceView;
@@ -23,34 +22,38 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-
 public class RealTimeCapture extends Activity implements CameraBridgeViewBase.CvCameraViewListener2 {
     private static final String TAG = "RealTimeCapture";
-    private Mat mRgba,mGray;
+    private static final String MODEL_PATH = "custom_yolov4-416-fp16.tflite";
+    private static final int INPUT_SIZE = 416;
+    private String labelpath = "9label.txt";
+
+    private Mat mRgba, mGray;
     private CameraBridgeViewBase mOpenCvCameraView;
     private objectDetectorClass objectDetectorClass;
-    private List<String> labelList;  // Declare labelList as a class variable
-    private AssetManager assetManager;  // Declare assetManager as a class variable
-    private String labelpath = "label.txt";  // Declare labelpath and initialize it with the correct file name
+    private List<String> labelList;
+    private AssetManager assetManager;
 
     private BaseLoaderCallback mLoaderCallback = new BaseLoaderCallback(this) {
         @Override
         public void onManagerConnected(int status) {
-            switch (status){
-                case LoaderCallbackInterface.SUCCESS:{
-                    Log.i(TAG,"OpenCv is Loaded");
+            switch (status) {
+                case LoaderCallbackInterface.SUCCESS: {
+                    Log.i(TAG, "OpenCv is Loaded");
                     mOpenCvCameraView.enableView();
                 }
-                default:{
+                default: {
                     super.onManagerConnected(status);
                 }
                 break;
             }
         }
     };
-    public RealTimeCapture(){
-        Log.i(TAG,"Instantiated new " + this.getClass());
+
+    public RealTimeCapture() {
+        Log.i(TAG, "Instantiated new " + this.getClass());
     }
+
     private List<String> loadLabelList(AssetManager assetManager, String labelpath) throws IOException {
         List<String> labelList = new ArrayList<>();
         BufferedReader br = new BufferedReader(new InputStreamReader(assetManager.open(labelpath)));
@@ -72,14 +75,12 @@ public class RealTimeCapture extends Activity implements CameraBridgeViewBase.Cv
         mOpenCvCameraView.setVisibility(SurfaceView.VISIBLE);
         mOpenCvCameraView.setCvCameraViewListener(this);
         assetManager = getAssets();
-        try{
-            //input size for 640 for this model
-            objectDetectorClass = new objectDetectorClass(getAssets(),"yolov4-tiny-416-fp16.tflite",labelpath,416);
+        try {
+            objectDetectorClass = new objectDetectorClass(getAssets(), MODEL_PATH, labelpath, INPUT_SIZE);
             labelList = loadLabelList(assetManager, labelpath);
-            Log.d("Recognition", "Label List: " + Arrays.toString(labelList.toArray()));
-            Log.d("MainActivity","Model is successfully loaded");
-        }
-        catch(IOException e){
+            Log.d(TAG, "Label List: " + Arrays.toString(labelList.toArray()));
+            Log.d(TAG, "Model is successfully loaded");
+        } catch (IOException e) {
             e.printStackTrace();
         }
         mOpenCvCameraView.enableFpsMeter();
@@ -88,20 +89,19 @@ public class RealTimeCapture extends Activity implements CameraBridgeViewBase.Cv
     @Override
     protected void onResume() {
         super.onResume();
-        if(OpenCVLoader.initDebug()){
-            Log.d(TAG,"OpenCv Initialization success");
+        if (OpenCVLoader.initDebug()) {
+            Log.d(TAG, "OpenCv Initialization success");
             mLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
-        }
-        else{
-            Log.d(TAG,"OpenCv Initialization failed... try again");
-            OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_3_4_0,this, mLoaderCallback);
+        } else {
+            Log.d(TAG, "OpenCv Initialization failed... try again");
+            OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_3_4_0, this, mLoaderCallback);
         }
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if(mOpenCvCameraView != null) {
+        if (mOpenCvCameraView != null) {
             mOpenCvCameraView.disableView();
         }
     }
@@ -109,24 +109,24 @@ public class RealTimeCapture extends Activity implements CameraBridgeViewBase.Cv
     @Override
     protected void onPause() {
         super.onPause();
-        if(mOpenCvCameraView != null) {
+        if (mOpenCvCameraView != null) {
             mOpenCvCameraView.disableView();
         }
     }
 
-    public void onCameraViewStarted(int width, int height){
-        mRgba = new Mat(height,width, CvType.CV_8UC4);
-        mGray = new Mat(height,width,CvType.CV_8UC1);
+    public void onCameraViewStarted(int width, int height) {
+        mRgba = new Mat(height, width, CvType.CV_8UC4);
+        mGray = new Mat(height, width, CvType.CV_8UC1);
     }
 
-    public void onCameraViewStopped(){
+    public void onCameraViewStopped() {
         mRgba.release();
     }
-    public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame){
+
+    public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
         mRgba = inputFrame.rgba();
         mGray = inputFrame.gray();
         Mat detectedFrame = objectDetectorClass.recognizeImage(mRgba);
-
         return detectedFrame;
     }
 }

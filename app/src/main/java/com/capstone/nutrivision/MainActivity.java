@@ -109,7 +109,7 @@ public class MainActivity extends AppCompatActivity {
         }
         try{
             //input size for 640 for this model
-            objectDetectorClass = new objectDetectorClass(getAssets(),"yolov4-tiny-416-fp16.tflite","label.txt",416);
+            objectDetectorClass = new objectDetectorClass(getAssets(),"custom_yolov4-416-fp16.tflite","9label.txt",416);
             Log.d("MainActivity","Model is successfully loaded");
         }
         catch(IOException e){
