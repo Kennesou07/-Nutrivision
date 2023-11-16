@@ -24,9 +24,9 @@ import java.util.List;
 
 public class RealTimeCapture extends Activity implements CameraBridgeViewBase.CvCameraViewListener2 {
     private static final String TAG = "RealTimeCapture";
-    private static final String MODEL_PATH = "custom_yolov4-416-fp16.tflite";
+    private static final String MODEL_PATH = "yolov4-tiny-416-fp16.tflite";
     private static final int INPUT_SIZE = 416;
-    private String labelpath = "9label.txt";
+    private String labelpath = "label.txt";
 
     private Mat mRgba, mGray;
     private CameraBridgeViewBase mOpenCvCameraView;

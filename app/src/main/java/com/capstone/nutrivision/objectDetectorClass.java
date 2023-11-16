@@ -13,6 +13,7 @@ import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.Point;
 import org.opencv.core.Scalar;
+import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 import org.tensorflow.lite.DataType;
 import org.tensorflow.lite.Interpreter;
@@ -109,7 +110,7 @@ public class objectDetectorClass {
                 Log.d("Tensor Shapes", "Output Tensor at index " + i + ": " + interpreter.getOutputTensor(i).name());
             }
 
-            if (outputTensorCount > 1) {
+            if (outputTensorCount == 2) {
 
                 int boxesIndex = 0;
                 int scoresIndex = 1;
@@ -123,10 +124,11 @@ public class objectDetectorClass {
                 outputMap.put(boxesIndex, boxes);
                 outputMap.put(scoresIndex, scores);
 
+                interpreter.runForMultipleInputsOutputs(input,outputMap);
+
                 Object value = outputMap.get(0);
                 Object objectClass = outputMap.get(1);
                 Log.d("Recognition", "Before processing outputs");
-                interpreter.runForMultipleInputsOutputs(input,outputMap);
                 if (value != null) {
                     Log.d("Object Value", value.getClass().getName());
                     Log.d("Object Dimensions - Boxes", Arrays.toString(getDimensions(value)));
@@ -151,12 +153,18 @@ public class objectDetectorClass {
                             Log.d("Recognition", "Boxes Array: " + Arrays.deepToString(boxesArray));
                             Log.d("Recognition", "Object Class Array: " + Arrays.deepToString(objectClassArray));
                             Log.d("Recognition", "Scores Array: " + Arrays.deepToString(scoresArray));
-
-                            for (int i = 0; i < getDimensions(objectClass)[2]; i++) {
+                            // Add these lines after the for loop in the else block
+                            Log.d("Debug", "height: " + height);
+                            Log.d("Debug", "width: " + width);
+                            int numDetections = getDimensions(objectClass)[2];
+                            for (int i = 0; i < numDetections; i++) {
                                 float classValue = objectClassArray[0][0][i];
-                                float confidenceScore = scoresArray[0][0][i];
-                                Log.d("Debug", "Index: " + i + ", Class: " + classValue + ", Confidence: " + confidenceScore);
+                                float[] rawScores = scoresArray[0][0];
+                                // Assuming only one confidence score
+                                float[] normalizedScores = applySoftmax(rawScores);
 
+                                float confidenceScore = normalizedScores[0];
+                                Log.d("Confidence Score", "Confidence: " + confidenceScore);
                                 if (confidenceScore > confidenceThreshold) {
                                     float[] box1 = boxesArray[0][i];
 
@@ -196,10 +204,11 @@ public class objectDetectorClass {
 
                     outputMap.put(singleTensorIndex, singleTensorData);
 
+                    interpreter.runForMultipleInputsOutputs(new Object[]{byteBuffer},outputMap);
+
                     // Rest of your code remains the same...
                     Object value = outputMap.get(singleTensorIndex);
                     Log.d("Recognition", "Before processing outputs");
-                    interpreter.run(input,outputMap);
                     if (value != null) {
                         Log.d("Object Value", value.getClass().getName());
                         Log.d("Object Dimensions - Boxes", Arrays.toString(getDimensions(value)));
@@ -210,9 +219,13 @@ public class objectDetectorClass {
                     // Now you can process the singleTensorData as before
                     if (singleTensorData!= null && singleTensorData.length > 0) {
                         float classValue = singleTensorData[0][0][0]; // Assuming the class information is at this location
-                        float confidenceScore = singleTensorData[0][0][1]; // Assuming the confidence score is at this location
+                        float[] rawScores = {singleTensorData[0][0][1]}; // Assuming only one confidence score
+                        float[] normalizedScores = applySoftmax(rawScores);
 
-                        if (confidenceScore > 0.5f) {
+                        float confidenceScore = normalizedScores[0];
+                        Log.d("Confidence Score", "Confidence: " + confidenceScore);
+
+                        if (confidenceScore > confidenceThreshold) {
                             float top = singleTensorData[0][0][2] * height;
                             float left = singleTensorData[0][0][3] * width;
                             float bottom = singleTensorData[0][0][4] * height;
@@ -231,101 +244,91 @@ public class objectDetectorClass {
                 } else {
                     Log.e("Recognition", "Unsupported data type: " + outputDataType);
                 }
-
             }
-                Log.d("Recognition", "End recognition");
+            Log.d("Recognition", "End recognition");
+            rotatedMatImage.release(); // Release the rotatedMatImage Mat after use
             } catch(Exception e){
                 Log.e("Recognition", "Exception During Recognition", e);
             }
 
         return matImage;
     }
-    public Mat recognizePhoto(Mat mat_image){
-        Bitmap bitmap = null;
-        bitmap = Bitmap.createBitmap(mat_image.cols(),mat_image.rows(),Bitmap.Config.ARGB_8888);
-        Utils.matToBitmap(mat_image, bitmap);
-        height = bitmap.getHeight();
-        width = bitmap.getWidth();
-        Bitmap scaledBitmap = Bitmap.createScaledBitmap(bitmap,INPUT_SIZE,INPUT_SIZE,false);
-        ByteBuffer byteBuffer = convertBitmapToByteBuffer(scaledBitmap);
-        Object[] input = new Object[1];
-        input[0] = byteBuffer;
-        Map<Integer,Object> output_map = new TreeMap<>();
-        // Print the number of output tensors
-        int outputTensorCount = interpreter.getOutputTensorCount();
-        Log.d("Tensor Shapes", "Number of output tensors: " + outputTensorCount);
+    private float[] applySoftmax(float[] scores) {
+        int length = scores.length;
+        float[] softmaxScores = new float[length];
+        float sumExp = 0;
 
-        // Print the indices of output tensors
-        for (int i = 0; i < outputTensorCount; i++) {
-            Log.d("Tensor Shapes", "Output Tensor at index " + i + ": " + interpreter.getOutputTensor(i).name());
+        // Compute the sum of exponentials
+        for (int i = 0; i < length; i++) {
+            sumExp += Math.exp(scores[i]);
         }
+
+        // Apply softmax
+        for (int i = 0; i < length; i++) {
+            softmaxScores[i] = (float) (Math.exp(scores[i]) / sumExp);
+        }
+
+        return softmaxScores;
+    }
+
+    public Mat recognizePhoto(Mat mat_image) {
+        // Resize the image using OpenCV functions
+        int inputTensorIndex = interpreter.getInputTensor(0).index();
+        int[] inputShape = interpreter.getInputTensor(0).shape();
+        DataType inputDataType = interpreter.getInputTensor(0).dataType();
+        Log.d("Photo Detection","Input Tensor Index: " + inputTensorIndex);
+        Log.d("Photo Detection","Input Tensor Shape: " + inputShape);
+        Log.d("Photo Detection","Input Data Type: " + inputDataType);
+        Imgproc.resize(mat_image, mat_image, new Size(INPUT_SIZE, INPUT_SIZE));
+
+        ByteBuffer byteBuffer = convertMatToByteBuffer(mat_image);
+        Object[] input = new Object[]{byteBuffer};
+
+        Map<Integer, Object> output_map = new HashMap<>();
         int boxesIndex = 0;
         int scoresIndex = 1;
 
         int[] boxesShape = interpreter.getOutputTensor(boxesIndex).shape();
         int[] scoresShape = interpreter.getOutputTensor(scoresIndex).shape();
 
-        float[][][] boxes = new float[boxesShape[0]][boxesShape[1]][boxesShape[2]];
-        float[][][] scores = new float[scoresShape[0]][scoresShape[1]][scoresShape[2]];
-
+        float[][][] boxes = new float[1][boxesShape[1]][boxesShape[2]];
+        float[][][] scores = new float[1][scoresShape[1]][scoresShape[2]];
 
         output_map.put(boxesIndex, boxes);
         output_map.put(scoresIndex, scores);
 
-        Object value = output_map.get(0); // Use index 0 for the boxes tensor
-        Object Object_class = output_map.get(1); // Use index 1 for the classes tensor
-        interpreter.runForMultipleInputsOutputs(input,output_map);
+        interpreter.runForMultipleInputsOutputs(input, output_map);
 
-        Log.d("Recognition", "Before processing outputs");
+        float[][][] boxesArray = (float[][][]) output_map.get(boxesIndex);
+        float[][][] scoresArray = (float[][][]) output_map.get(scoresIndex);
 
-        if (value != null) {
-            Log.d("Object Value", value.getClass().getName());
-            Log.d("Object Dimensions - Boxes", Arrays.toString(getDimensions(value)));
-        } else {
-            Log.e("Recognition", "Value object is null.");
-        }
+        for (int i = 0; i < scoresArray[0][0].length; i++) {
+            float confidence_score = scoresArray[0][0][i];
+            Log.d("Detection", "Confidence Score: " + confidence_score);
 
-        if (Object_class != null) {
-            Log.d("Object Dimensions - Classes", Arrays.toString(getDimensions(Object_class)));
-        } else {
-            Log.e("Recognition", "Object_class is null.");
-        }
+            // Convert confidence score to percentage
+            float confidencePercentage = confidence_score * 100;
+            Log.d("Detection", "Confidence Percentage: " + confidencePercentage + "%");
 
-        if (value instanceof float[][][]) {
-            float[][][] boxesArray = (float[][][]) value;
+            if (confidencePercentage > confidenceThreshold) {
+                float[] box = boxesArray[0][i];
 
-            if (Object_class instanceof float[][][]) {
-                float[][][] Object_classArray = (float[][][]) Object_class;
+                float top = box[0] * height;
+                float left = box[1] * width;
+                float bottom = box[2] * height;
+                float right = box[3] * width;
 
-                if (scores instanceof float[][][]) {
-                    float[][][] scoresArray = (float[][][]) scores;
+                // Ensure the coordinates are within bounds
+                top = Math.max(0, Math.min(height - 1, top));
+                left = Math.max(0, Math.min(width - 1, left));
+                bottom = Math.max(0, Math.min(height - 1, bottom));
+                right = Math.max(0, Math.min(width - 1, right));
 
-                    for (int i = 0; i < getDimensions(Object_class)[2]; i++) {
-                        float class_value = Object_classArray[0][0][i];
-                        float confidence_score = scoresArray[0][0][i];
-
-                        if (confidence_score > 0.5) {
-                            float[] box1 = boxesArray[0][i];
-
-                            float top = box1[0] * height;
-                            float left = box1[1] * width;
-                            float bottom = box1[2] * height;
-                            float right = box1[3] * width;
-                            Imgproc.rectangle(mat_image, new Point(left, top), new Point(right, bottom), new Scalar(0, 255, 0, 255), 2);
-                            Imgproc.putText(mat_image, labelList.get((int) class_value), new Point(left, top), 3, 1, new Scalar(0, 255, 0, 255), 2);
-                        }
-                    }
-                } else {
-                    Log.e("Recognition", "Invalid format for the scores tensor.");
-                }
-            } else {
-                Log.e("Recognition", "Invalid format for the object number tensor.");
+                Imgproc.rectangle(mat_image, new Point(left, top), new Point(right, bottom), new Scalar(0, 255, 0, 255), 2);
+                Imgproc.putText(mat_image, labelList.get((int) box[4]) + " " + confidencePercentage + "%", new Point(left, top), 3, 1, new Scalar(0, 255, 0, 255), 2);
             }
-        } else {
-            Log.e("Recognition", "Invalid format for the boxes tensor.");
         }
 
-        Log.d("Recognition", "After processing outputs");
 
         return mat_image;
     }
@@ -343,6 +346,27 @@ public class objectDetectorClass {
         }
         return result;
     }
+    private ByteBuffer convertMatToByteBuffer(Mat mat_image) {
+        // Resize the image using OpenCV functions
+        Imgproc.resize(mat_image, mat_image, new Size(INPUT_SIZE, INPUT_SIZE));
+
+        ByteBuffer byteBuffer = ByteBuffer.allocateDirect(INPUT_SIZE * INPUT_SIZE * 3 * 4); // Assuming 3 channels, 4 bytes per float
+        byteBuffer.order(ByteOrder.nativeOrder());
+
+        for (int row = 0; row < INPUT_SIZE; row++) {
+            for (int col = 0; col < INPUT_SIZE; col++) {
+                double[] pixel = mat_image.get(row, col);
+                byteBuffer.putFloat((float) (pixel[0] / 255.0)); // Assuming pixel values are in the range [0, 255]
+                byteBuffer.putFloat((float) (pixel[1] / 255.0));
+                byteBuffer.putFloat((float) (pixel[2] / 255.0));
+            }
+        }
+
+        byteBuffer.flip(); // Important: Reset the position to the beginning of the buffer
+
+        return byteBuffer;
+    }
+
 
     private ByteBuffer convertBitmapToByteBuffer(Bitmap bitmap) {
         ByteBuffer byteBuffer;

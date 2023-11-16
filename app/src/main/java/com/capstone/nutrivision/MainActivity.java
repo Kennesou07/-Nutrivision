@@ -9,6 +9,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.provider.MediaStore;
 import android.util.Log;
@@ -75,21 +76,34 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if(requestCode == SELECT_CODE && data != null){
+        if (requestCode == SELECT_CODE && data != null) {
             Uri selectedImageUri = data.getData();
-            if(selectedImageUri != null){
+            if (selectedImageUri != null) {
                 try {
-                    bitmap = MediaStore.Images.Media.getBitmap(this.getContentResolver(),selectedImageUri);
-                }
-                catch (IOException e){
+                    // Load the image into a Bitmap
+                    bitmap = MediaStore.Images.Media.getBitmap(this.getContentResolver(), selectedImageUri);
+
+                    // Create a Mat with the appropriate configuration
+                    selectedImage = new Mat(bitmap.getHeight(), bitmap.getWidth(), CvType.CV_8UC4);
+                    Utils.bitmapToMat(bitmap, selectedImage);
+
+                    // Perform object detection on a background thread
+                    AsyncTask.execute(() -> {
+                        Mat processedImage = objectDetectorClass.recognizePhoto(selectedImage);
+
+                        // Update UI on the main thread
+                        runOnUiThread(() -> {
+                            // Create a new Bitmap with ARGB_8888 configuration
+                            bitmap1 = Bitmap.createBitmap(processedImage.cols(), processedImage.rows(), Bitmap.Config.ARGB_8888);
+                            Utils.matToBitmap(processedImage, bitmap1);
+
+                            // Display the processed image in ImageView
+                            imgView.setImageBitmap(bitmap1);
+                        });
+                    });
+                } catch (IOException e) {
                     e.printStackTrace();
                 }
-                selectedImage = new Mat(bitmap.getHeight(),bitmap.getWidth(), CvType.CV_8UC4);
-                Utils.bitmapToMat(bitmap,selectedImage);
-                selectedImage = objectDetectorClass.recognizePhoto(selectedImage);
-                bitmap1 = Bitmap.createBitmap(selectedImage.cols(),selectedImage.rows(),Bitmap.Config.ARGB_8888);
-                Utils.matToBitmap(selectedImage,bitmap1);
-                imgView.setImageBitmap(bitmap1);
             }
         }
     }
@@ -109,7 +123,7 @@ public class MainActivity extends AppCompatActivity {
         }
         try{
             //input size for 640 for this model
-            objectDetectorClass = new objectDetectorClass(getAssets(),"custom_yolov4-416-fp16.tflite","9label.txt",416);
+            objectDetectorClass = new objectDetectorClass(getAssets(),"yolov4-tiny-416-fp16.tflite","label.txt",416);
             Log.d("MainActivity","Model is successfully loaded");
         }
         catch(IOException e){
